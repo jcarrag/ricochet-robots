@@ -1,0 +1,66 @@
+div {
+    color: black;
+}
+
+.red {
+    color: red;
+}
+
+.blue {
+    color: blue;
+}
+
+.box {
+    position: relative;
+    padding: 10px;
+    height: 40px;
+    width: 40px;
+    border-style: solid;
+    border-width: 2px;
+    background-color: yellow;
+    text-align: center;
+}
+
+.toggled {
+    background-color: green;
+}
+
+.img {
+    z-index: 1;
+    position: absolute;
+    top: 10%;
+    left: 10%;
+}
+
+.icon {
+    border-radius: 50%;
+    width: 80%;
+    height: 80%;
+}
+
+.vertical {
+    top: 0%;
+    left: -15%;
+    width: 25%;
+    height: 100%;
+}
+
+.horizontal {
+    top: 90%;
+    left: 0%;
+    width: 100%;
+    height: 25%;
+}
+
+.outer {
+    display: flex;
+    flex-direction: row;
+    width: fit-content;
+    border-width: 10px;
+    border-style: dashed
+}
+
+.inner {
+    background-color: red;
+}
+
