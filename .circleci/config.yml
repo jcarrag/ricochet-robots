@@ -1,0 +1,49 @@
+# Javascript Node CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-javascript/ for more details
+#
+version: 2
+general:
+  branches:
+    ignore:
+      - gh-pages
+jobs:
+  build:
+    docker:
+      # specify the version you desire here
+      - image: circleci/node:7.10
+      
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/mongo:3.4.4
+
+    working_directory: ~/repo
+
+    steps:
+      - checkout
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v2-dependencies-{{ checksum "bower.json" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run: sudo npm i -g purescript bower pulp
+      - run: bower install
+        
+      - run: pulp browserify -t app.js -O
+
+      - save_cache:
+          paths:
+            - bower_components
+            - output
+          key: v2-dependencies-{{ checksum "bower.json" }}
+
+      - run: git config --global user.email "circle@ci.com"
+      - run: git config --global user.name "CircleCI"
+      - run: git checkout -b gh-pages
+      - run: git add app.js
+      - run: git commit -m "CI commit app.js"
+      - run: git push -f origin gh-pages
