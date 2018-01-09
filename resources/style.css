@@ -49,16 +49,15 @@
 
 .tile {
     z-index: 1;
+    border-radius: 3px;
 }
 
 .moon {
-    border-radius: 0%;
     width: 70%;
     height: 70%;
 }
 
 .square {
-    border-radius: 0%;
     width: 30%;
     height: 30%;
 }

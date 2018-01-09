@@ -327,7 +327,9 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall dest) =
     toggledClass _ = ""
 
     people :: Array (H.ComponentHTML Query)
-    people = [HH.div [ HP.class_ $ wrap $ "person icon " <> genPerson person] []]
+    people = case person of
+      NoPerson -> []
+      _ -> [ HH.div [ HP.class_ $ wrap $ "person icon " <> genPersonColour person] []]
 
     genWall :: String -> H.ComponentHTML Query
     genWall className = HH.div [ HP.class_ $ wrap $ "wall " <> className] []
@@ -344,15 +346,15 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall dest) =
     destinations :: Array (H.ComponentHTML Query)
     destinations = case dest of
       NoDestination -> []
-      (Destination t' p') -> [ HH.div [ HP.class_ $ wrap $ "icon tile " <> genTile t' <> genPerson p'] []]
+      (Destination t' p') -> [ HH.div [ HP.class_ $ wrap $ "icon tile " <> genTile t' <> genPersonColour p'] []]
 
     genTile :: Tile -> String
     genTile t = case t of
       Moon -> "moon "
       Square -> "square "
 
-    genPerson :: Person -> String
-    genPerson p = case p of
+    genPersonColour :: Person -> String
+    genPersonColour p = case p of
       Blue -> "blue "
       Red -> "red "
       Yellow -> "yellow "
