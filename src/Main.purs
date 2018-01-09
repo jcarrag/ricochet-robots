@@ -272,7 +272,7 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall) =
     [ HP.class_ $ wrap $ ("box " <> toggledClass toggledPerson)
     , HE.onClick $ HE.input_ $ clickHandler toggledPerson coord person
     ] $
-    [ HH.text $ "(" <> show x <> "," <> show y <> ")"] <>
+--    [ HH.text $ "(" <> show x <> "," <> show y <> ")"] <>
     walls <>
     people
   where
@@ -334,10 +334,7 @@ ui =
     render state =
       HH.div
         [ HP.class_ $ wrap "container" ]
-        [ HH.div
-          [ HP.class_ $ wrap "root"]
-          [ gridToHtml state.game grid ]
-        ]
+        [ gridToHtml state.game grid ]
 --    log' = H.liftEff <<< log
     eval :: Query ~> H.ComponentDSL State Query Void (Aff (AppEffects eff))
     eval move@(Move (Just npc@(PersonCell coord _)) direction next) = do

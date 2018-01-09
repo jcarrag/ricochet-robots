@@ -1,13 +1,13 @@
-div {
-    background-color: black;
+.yellow {
+    background-color: #F4F1BB;
 }
 
 .red {
-    background-color: red;
+    background-color: #ED6A5A;
 }
 
 .blue {
-    background-color: blue;
+    background-color: #9BC1BC;
 }
 
 .box {
@@ -15,33 +15,35 @@ div {
     padding: 10px;
     height: 40px;
     width: 40px;
-    border-style: solid;
-    border-width: 2px;
-    background-color: yellow;
+    border-style: dashed;
+    border-width: 1px;
+    border-color: #5CA4A9;
+    background-color: #E6EBE0;
     text-align: center;
 }
 
 .toggled {
-    background-color: green;
+    background-color: #5CA4A9;
 }
 
 .icon {
     position: absolute;
-    top: 10%;
-    left: 10%;
+    top: 15%;
+    left: 15%;
 }
 
 .person {
     border-radius: 50%;
-    width: 80%;
-	  height: 80%;
+    width: 70%;
+	  height: 70%;
 	  border-radius: 50%;
 }
 
 .wall {
     z-index: 1;
     position: absolute;
-    background-color: black;
+    background-color: #5CA4A9;
+    border-radius: 3px;
 }
 
 .vertical {
@@ -62,8 +64,11 @@ div {
     display: flex;
     flex-direction: row;
     width: fit-content;
-    border-width: 10px;
-    border-style: dashed
+    margin: auto;
+    border-width: 13px;
+    border-color: #5CA4A9;
+    border-radius: 3px;
+    border-style: solid;
 }
 
 .inner {
