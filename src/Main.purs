@@ -267,23 +267,13 @@ arrayToHtml state =
 cellToHtml :: Game -> Cell -> H.ComponentHTML Query
 cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall) =
   HH.div
-    [ HP.class_ $ wrap $ ("box" <> toggledClass toggledPerson)
+    [ HP.class_ $ wrap $ ("box " <> toggledClass toggledPerson)
     , HE.onClick $ HE.input_ $ clickHandler toggledPerson coord person
     ] $
     [ HH.text $ "(" <> show x <> "," <> show y <> ")"] <>
     walls <>
     people
   where
-    genPerson :: String -> H.ComponentHTML Query
-    genPerson fileName =
-      HH.img [ HP.class_ $ wrap "img icon"
-             , HP.src fileName
-             ]
-
-    toggledClass :: Maybe PersonCell -> String
-    toggledClass (Just (PersonCell c' p')) | c'==coord && p'==person = " toggled"
-    toggledClass _ = ""
-
     -- TODO: use message vs. query?
     clickHandler :: forall a. Maybe PersonCell -> Coord -> Person -> (a -> Query a)
     clickHandler tp@(Just (PersonCell (Coord x' y') _)) _ NoPerson | x'>x && y'==y = Move tp West
@@ -293,18 +283,22 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall) =
     clickHandler _ _ NoPerson = Toggle Nothing
     clickHandler _ _ _ = Toggle (Just (PersonCell coord person))
 
+    toggledClass :: Maybe PersonCell -> String
+    toggledClass (Just (PersonCell c' p')) | c'==coord && p'==person = "toggled "
+    toggledClass _ = ""
+
+    genPerson :: String -> H.ComponentHTML Query
+    genPerson colour = HH.div [ HP.class_ $ wrap $ "person icon " <> colour] []
+
     people :: Array (H.ComponentHTML Query)
     people = case person of
-      Blue -> [ genPerson "resources/blue.png"]
-      Red -> [ genPerson "resources/red.png"]
-      Yellow -> [ genPerson "resources/yellow.png"]
+      Blue -> [ genPerson "blue"]
+      Red -> [ genPerson "red"]
+      Yellow -> [ genPerson "yellow"]
       NoPerson -> []
 
     genWall :: String -> H.ComponentHTML Query
-    genWall className =
-      HH.img [ HP.class_ $ wrap $ "img " <> className
-             , HP.src "resources/texture.jpg"
-             ]
+    genWall className = HH.div [ HP.class_ $ wrap $ "wall " <> className] []
 
     walls :: Array (H.ComponentHTML Query)
     walls = case wall of
