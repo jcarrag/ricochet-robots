@@ -169,8 +169,7 @@ type Ops =
 filt :: Direction -> PersonCell -> List Cell -> List Cell
 filt dir (PersonCell (Coord x y) p) =
   collectValidTiles dir <<<
-  filter (\(Cell c'@(Coord x' y') p' w') -> x' `(ops dir).compX` x) <<<
-  filter (\(Cell c'@(Coord x' y') p' w') -> y `(ops dir).compY` y') <<<
+  filter (\(Cell c'@(Coord x' y') _ _) -> x' `ops'.compX` x && y  `ops'.compY` y') <<<
   (ops dir).ord <<<
   sort
   where
@@ -214,6 +213,9 @@ filt dir (PersonCell (Coord x y) p) =
     collectValidTiles North (cell@(Cell _ p'       NoWall    ) : rest) | p == p' = cell : collectValidTiles dir rest
     -- Base
     collectValidTiles _ _ = Nil
+
+    ops' :: Ops
+    ops' = ops dir
 
     ops :: Direction -> Ops
     ops West = { compX: (<=)
