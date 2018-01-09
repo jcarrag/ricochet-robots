@@ -12,12 +12,10 @@ import DOM (DOM)
 import Data.Array (fromFoldable) as A
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
-import Data.List (List(..), filter, fromFoldable, groupBy, last, reverse, sort, (..), (:))
+import Data.List (List(..), filter, find, fromFoldable, groupBy, last, reverse, sort, (..), (:))
 import Data.List.Types (toList)
-import Data.Map (Map, fromFoldable, lookup) as M
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (wrap)
-import Data.Tuple (Tuple(..))
 import Halogen as H
 import Halogen.Aff as HA
 import Halogen.HTML as HH
@@ -32,6 +30,7 @@ type State =
 type Game =
   { walls :: List WallCell
   , people :: List PersonCell
+  , destinations :: List DestinationCell
   , grid :: List Cell
   , toggledPerson :: Maybe PersonCell
   }
@@ -56,7 +55,7 @@ data Person
   | Yellow
   | NoPerson
 
-data Cell = Cell Coord Person Wall
+data Cell = Cell Coord Person Wall Destination
 
 data Direction
   = North
@@ -70,9 +69,19 @@ data Wall
   | Both
   | NoWall
 
+data Tile
+  = Moon
+  | Square
+
+data Destination
+  = Destination Tile Person
+  | NoDestination
+
 data WallCell = WallCell Coord Wall
 
 data PersonCell = PersonCell Coord Person
+
+data DestinationCell = DestinationCell Coord Destination
 
 derive instance genericPerson :: Generic Person _
 derive instance genericCoord :: Generic Coord _
@@ -81,6 +90,9 @@ derive instance genericCell :: Generic Cell _
 derive instance genericWallCell :: Generic WallCell _
 derive instance genericPersonCell :: Generic PersonCell _
 derive instance genericDirection :: Generic Direction _
+derive instance genericTile :: Generic Tile _
+derive instance genericDestination :: Generic Destination _
+derive instance genericDestinationCell :: Generic DestinationCell _
 instance showPerson :: Show Person where
   show = genericShow
 instance showCoord :: Show Coord where
@@ -95,6 +107,12 @@ instance showPersonCell :: Show PersonCell where
   show = genericShow
 instance showDirection :: Show Direction where
   show = genericShow
+instance showTile :: Show Tile where
+  show = genericShow
+instance showDestination :: Show Destination where
+  show = genericShow
+instance showDestinationCell :: Show DestinationCell where
+  show = genericShow
 derive instance eqCoord :: Eq Coord
 derive instance ordCoord :: Ord Coord
 derive instance eqPerson :: Eq Person
@@ -104,6 +122,10 @@ derive instance eqWall:: Eq Wall
 derive instance ordWall:: Ord Wall
 derive instance eqCell :: Eq Cell
 derive instance ordCell :: Ord Cell
+derive instance eqTile :: Eq Tile
+derive instance ordTile :: Ord Tile
+derive instance eqDestination :: Eq Destination
+derive instance ordDestination :: Ord Destination
 
 walls :: List WallCell
 walls =
@@ -113,10 +135,8 @@ walls =
   , WallCell (Coord 0 1) Horizontal
   ]
 
-lookupWalls :: List WallCell -> M.Map Coord WallCell
-lookupWalls =
-  M.fromFoldable <<<
-  map (\wc@(WallCell coord _) -> Tuple coord wc)
+findWall :: Coord -> List WallCell -> Maybe WallCell
+findWall c = find (\(WallCell c' _) -> c' == c)
 
 people :: List PersonCell
 people =
@@ -126,38 +146,53 @@ people =
     , PersonCell (Coord 0 0) Yellow
     ]
 
-lookupPeople :: List PersonCell -> M.Map Coord PersonCell
-lookupPeople =
-  M.fromFoldable <<<
-  map (\pc@(PersonCell coord _) -> Tuple coord pc)
+findPerson :: Coord -> List PersonCell -> Maybe PersonCell
+findPerson c = find (\(PersonCell c' _) -> c' == c)
+
+destinations :: List DestinationCell
+destinations =
+  fromFoldable
+    [ DestinationCell (Coord 1 2) (Destination Moon Blue)
+    , DestinationCell (Coord 3 0) (Destination Moon Red)
+    ]
+
+findDestination :: Coord -> List DestinationCell -> Maybe DestinationCell
+findDestination c = find (\(DestinationCell c' _) -> c' == c)
 
 grid :: List Cell
 grid = do
   x <- 0 .. 3
   y <- 3 .. 0
-  pure $ Cell (Coord x y) NoPerson NoWall
+  pure $ Cell (Coord x y) NoPerson NoWall NoDestination
 
 groupGrid :: List Cell -> List (List Cell)
 groupGrid =
   map toList <<<
-  groupBy (\(Cell (Coord x1 _) _ _) (Cell (Coord x2 _) _ _) -> x1 == x2)
+  groupBy (\(Cell (Coord x1 _) _ _ _) (Cell (Coord x2 _) _ _ _) -> x1 == x2)
 
 addWalls :: List WallCell -> List Cell -> List Cell
 addWalls walls cells = do
-  cell@Cell coord person _ <- cells
+  cell@Cell coord person _ dest <- cells
   -- "lift" WallCell into Cell?
   -- could be middleware?
   -- use Control.State?
   let newCell =
-        maybe cell id (map (\(WallCell newCoord wall) -> Cell newCoord person wall) $ M.lookup coord $ lookupWalls walls)
+        maybe cell id (map (\(WallCell coord' wall') -> Cell coord' person wall' dest) $ findWall coord walls)
   pure newCell
 
 addPeople :: List PersonCell -> List Cell -> List Cell
 addPeople people cells = do
-  cell@Cell coord _ wall <- cells
+  cell@Cell coord _ wall dest <- cells
   -- TODO: Error if placing new person on Coord of existing person
   let newCell =
-        maybe cell id (map (\(PersonCell newCoord person) -> Cell newCoord person wall) $ M.lookup coord $ lookupPeople people)
+        maybe cell id (map (\(PersonCell coord' person') -> Cell coord' person' wall dest) $ findPerson coord people)
+  pure newCell
+
+addDestinations :: List DestinationCell -> List Cell -> List Cell
+addDestinations destinations cells = do
+  cell@Cell coord person wall _ <- cells
+  let newCell =
+        maybe cell id (map (\(DestinationCell coord' dest') -> Cell coord' person wall dest') $ findDestination coord destinations)
   pure newCell
 
 type Ops =
@@ -169,48 +204,48 @@ type Ops =
 filt :: Direction -> PersonCell -> List Cell -> List Cell
 filt dir (PersonCell (Coord x y) p) =
   collectValidTiles dir <<<
-  filter (\(Cell c'@(Coord x' y') _ _) -> x' `ops'.compX` x && y  `ops'.compY` y') <<<
+  filter (\(Cell c'@(Coord x' y') _ _ _) -> x' `ops'.compX` x && y  `ops'.compY` y') <<<
   (ops dir).ord <<<
   sort
   where
     -- TODO: refactor
     collectValidTiles :: Direction -> List Cell -> List Cell
     -- West
-    collectValidTiles West (cell@(Cell _ NoPerson Vertical  ) : _   )           = cell : Nil
-    collectValidTiles West (cell@(Cell _ NoPerson Both      ) : _   )           = cell : Nil
-    collectValidTiles West (cell@(Cell _ NoPerson Horizontal) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles West (cell@(Cell _ NoPerson NoWall    ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles West (cell@(Cell _ p'       Vertical  ) : _   ) | p == p' = cell : Nil
-    collectValidTiles West (cell@(Cell _ p'       Both      ) : _   ) | p == p' = cell : Nil
-    collectValidTiles West (cell@(Cell _ p'       Horizontal) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles West (cell@(Cell _ p'       NoWall    ) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles West  (cell@(Cell _ NoPerson Vertical   _) : _   )           = cell : Nil
+    collectValidTiles West  (cell@(Cell _ NoPerson Both       _) : _   )           = cell : Nil
+    collectValidTiles West  (cell@(Cell _ NoPerson Horizontal _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles West  (cell@(Cell _ NoPerson NoWall     _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles West  (cell@(Cell _ p'       Vertical   _) : _   ) | p == p' = cell : Nil
+    collectValidTiles West  (cell@(Cell _ p'       Both       _) : _   ) | p == p' = cell : Nil
+    collectValidTiles West  (cell@(Cell _ p'       Horizontal _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles West  (cell@(Cell _ p'       NoWall     _) : rest) | p == p' = cell : collectValidTiles dir rest
     -- East
-    collectValidTiles East (cell@(Cell _ NoPerson Vertical  ) : _   )           = Nil
-    collectValidTiles East (cell@(Cell _ NoPerson Both      ) : _   )           = Nil
-    collectValidTiles East (cell@(Cell _ NoPerson Horizontal) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles East (cell@(Cell _ NoPerson NoWall    ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles East (cell@(Cell _ p'       Vertical  ) : _   ) | p == p' = Nil
-    collectValidTiles East (cell@(Cell _ p'       Both      ) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles East (cell@(Cell _ p'       Horizontal) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles East (cell@(Cell _ p'       NoWall    ) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles East  (cell@(Cell _ NoPerson Vertical   _) : _   )           = Nil
+    collectValidTiles East  (cell@(Cell _ NoPerson Both       _) : _   )           = Nil
+    collectValidTiles East  (cell@(Cell _ NoPerson Horizontal _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles East  (cell@(Cell _ NoPerson NoWall     _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles East  (cell@(Cell _ p'       Vertical   _) : _   ) | p == p' = Nil
+    collectValidTiles East  (cell@(Cell _ p'       Both       _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles East  (cell@(Cell _ p'       Horizontal _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles East  (cell@(Cell _ p'       NoWall     _) : rest) | p == p' = cell : collectValidTiles dir rest
     -- South
-    collectValidTiles South (cell@(Cell _ NoPerson Vertical  ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles South (cell@(Cell _ NoPerson Both      ) : _   )           = cell : Nil
-    collectValidTiles South (cell@(Cell _ NoPerson Horizontal) : _   )           = cell : Nil
-    collectValidTiles South (cell@(Cell _ NoPerson NoWall    ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles South (cell@(Cell _ p'       Vertical  ) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles South (cell@(Cell _ p'       Both      ) : _   ) | p == p' = cell : Nil
-    collectValidTiles South (cell@(Cell _ p'       Horizontal) : _   ) | p == p' = cell : Nil
-    collectValidTiles South (cell@(Cell _ p'       NoWall    ) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles South (cell@(Cell _ NoPerson Vertical   _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles South (cell@(Cell _ NoPerson Both       _) : _   )           = cell : Nil
+    collectValidTiles South (cell@(Cell _ NoPerson Horizontal _) : _   )           = cell : Nil
+    collectValidTiles South (cell@(Cell _ NoPerson NoWall     _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles South (cell@(Cell _ p'       Vertical   _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles South (cell@(Cell _ p'       Both       _) : _   ) | p == p' = cell : Nil
+    collectValidTiles South (cell@(Cell _ p'       Horizontal _) : _   ) | p == p' = cell : Nil
+    collectValidTiles South (cell@(Cell _ p'       NoWall     _) : rest) | p == p' = cell : collectValidTiles dir rest
     -- North
-    collectValidTiles North (cell@(Cell _ NoPerson Vertical  ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles North (cell@(Cell _ NoPerson Both      ) : _   )           = Nil
-    collectValidTiles North (cell@(Cell _ NoPerson Horizontal) : _   )           = Nil
-    collectValidTiles North (cell@(Cell _ NoPerson NoWall    ) : rest)           = cell : collectValidTiles dir rest
-    collectValidTiles North (cell@(Cell _ p'       Vertical  ) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles North (cell@(Cell _ p'       Both      ) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles North (cell@(Cell _ p'       Horizontal) : rest) | p == p' = cell : collectValidTiles dir rest
-    collectValidTiles North (cell@(Cell _ p'       NoWall    ) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ NoPerson Vertical   _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ NoPerson Both       _) : _   )           = Nil
+    collectValidTiles North (cell@(Cell _ NoPerson Horizontal _) : _   )           = Nil
+    collectValidTiles North (cell@(Cell _ NoPerson NoWall     _) : rest)           = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ p'       Vertical   _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ p'       Both       _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ p'       Horizontal _) : rest) | p == p' = cell : collectValidTiles dir rest
+    collectValidTiles North (cell@(Cell _ p'       NoWall     _) : rest) | p == p' = cell : collectValidTiles dir rest
     -- Base
     collectValidTiles _ _ = Nil
 
@@ -241,7 +276,7 @@ movePerson pc@(PersonCell c@(Coord x y) p) direction
   = maybe pc id <<<
     -- replace last with head
     last <<<
-    map (\(Cell coord' _ _) -> PersonCell coord' p) <<<
+    map (\(Cell coord' _ _ _) -> PersonCell coord' p) <<<
     filt direction (PersonCell c p) <<<
     fromFoldable
 
@@ -250,7 +285,8 @@ gridToHtml game =
   arrayArrayToHtml game <<<
   groupGrid <<<
   addPeople game.people <<<
-  addWalls game.walls
+  addWalls game.walls <<<
+  addDestinations game.destinations
 
 -- TODO: Reader monad to implicitly add state to these render functions?
 arrayArrayToHtml :: Game -> List (List Cell) -> H.ComponentHTML Query
@@ -267,14 +303,15 @@ arrayToHtml state =
 
 -- TODO: making variable naming consistent
 cellToHtml :: Game -> Cell -> H.ComponentHTML Query
-cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall) =
+cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall dest) =
   HH.div
     [ HP.class_ $ wrap $ ("box " <> toggledClass toggledPerson)
     , HE.onClick $ HE.input_ $ clickHandler toggledPerson coord person
     ] $
 --    [ HH.text $ "(" <> show x <> "," <> show y <> ")"] <>
     walls <>
-    people
+    people <>
+    destinations
   where
     -- TODO: use message vs. query?
     clickHandler :: forall a. Maybe PersonCell -> Coord -> Person -> (a -> Query a)
@@ -289,27 +326,37 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall) =
     toggledClass (Just (PersonCell c' p')) | c'==coord && p'==person = "toggled "
     toggledClass _ = ""
 
-    genPerson :: String -> H.ComponentHTML Query
-    genPerson colour = HH.div [ HP.class_ $ wrap $ "person icon " <> colour] []
-
     people :: Array (H.ComponentHTML Query)
-    people = case person of
-      Blue -> [ genPerson "blue"]
-      Red -> [ genPerson "red"]
-      Yellow -> [ genPerson "yellow"]
-      NoPerson -> []
+    people = [HH.div [ HP.class_ $ wrap $ "person icon " <> genPerson person] []]
 
     genWall :: String -> H.ComponentHTML Query
     genWall className = HH.div [ HP.class_ $ wrap $ "wall " <> className] []
 
     walls :: Array (H.ComponentHTML Query)
     walls = case wall of
-      Vertical -> [ genWall "vertical"]
-      Horizontal -> [ genWall "horizontal"]
-      Both -> [ genWall "vertical"
-              , genWall "horizontal"
+      Vertical -> [ genWall "vertical "]
+      Horizontal -> [ genWall "horizontal "]
+      Both -> [ genWall "vertical "
+              , genWall "horizontal "
               ]
       NoWall -> []
+
+    destinations :: Array (H.ComponentHTML Query)
+    destinations = case dest of
+      NoDestination -> []
+      (Destination t' p') -> [ HH.div [ HP.class_ $ wrap $ "icon tile " <> genTile t' <> genPerson p'] []]
+
+    genTile :: Tile -> String
+    genTile t = case t of
+      Moon -> "moon "
+      Square -> "square "
+
+    genPerson :: Person -> String
+    genPerson p = case p of
+      Blue -> "blue "
+      Red -> "red "
+      Yellow -> "yellow "
+      NoPerson -> ""
 
 ui :: forall eff. H.Component HH.HTML Query Unit Void (Aff (AppEffects eff))
 ui =
@@ -325,6 +372,7 @@ ui =
       { game:
           { people
           , walls
+          , destinations
           , grid
           , toggledPerson: Nothing
           }
