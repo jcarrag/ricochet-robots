@@ -76,6 +76,10 @@
     height: 25%;
 }
 
+.container {
+    display: flex;
+}
+
 .outer {
     display: flex;
     flex-direction: row;
