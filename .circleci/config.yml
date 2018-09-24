@@ -30,7 +30,7 @@ jobs:
           # fallback to using the latest cache if no exact match is found
           - v1-dependencies-
 
-      - run: sudo npm i -g purescript bower pulp
+      - run: sudo npm i -g purescript@0.11.7 bower@1.7.10 pulp@12.0.1
       - run: bower install
         
       - run: pulp browserify -t app.js -O
