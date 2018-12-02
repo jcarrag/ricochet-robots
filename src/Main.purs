@@ -2,13 +2,8 @@ module Main where
 
 import Prelude
 
-import Control.Monad.Aff (Aff)
-import Control.Monad.Aff.AVar (AVAR)
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE, log)
-import Control.Monad.Eff.Exception (EXCEPTION)
-import Control.Monad.Eff.Ref (REF)
-import DOM (DOM)
+import Effect (Effect)
+import Effect.Aff (Aff)
 import Data.Array (fromFoldable) as A
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
@@ -31,7 +26,6 @@ type Game =
   { walls :: List WallCell
   , people :: List PersonCell
   , destinations :: List DestinationCell
-  , grid :: List Cell
   , toggledPerson :: Maybe PersonCell
   }
 
@@ -41,11 +35,6 @@ data SkipSize = Sm | Md | Lg
 data Query a
   = Toggle (Maybe PersonCell) a
   | Move (Maybe PersonCell) Direction a
-
-type AppEffects eff =
-  ( console :: CONSOLE
-  , dom :: DOM
-  | eff)
 
 data Coord = Coord Int Int
 
@@ -127,8 +116,8 @@ derive instance ordTile :: Ord Tile
 derive instance eqDestination :: Eq Destination
 derive instance ordDestination :: Ord Destination
 
-walls :: List WallCell
-walls =
+initWalls :: List WallCell
+initWalls =
   fromFoldable
   [ WallCell (Coord 3 0) Vertical
   , WallCell (Coord 1 2) Both
@@ -138,8 +127,8 @@ walls =
 findWall :: Coord -> List WallCell -> Maybe WallCell
 findWall c = find (\(WallCell c' _) -> c' == c)
 
-people :: List PersonCell
-people =
+initPeople :: List PersonCell
+initPeople =
   fromFoldable
     [ PersonCell (Coord 0 3) Red
     , PersonCell (Coord 2 3) Blue
@@ -149,8 +138,8 @@ people =
 findPerson :: Coord -> List PersonCell -> Maybe PersonCell
 findPerson c = find (\(PersonCell c' _) -> c' == c)
 
-destinations :: List DestinationCell
-destinations =
+initDestinations :: List DestinationCell
+initDestinations =
   fromFoldable
     [ DestinationCell (Coord 1 2) (Destination Moon Blue)
     , DestinationCell (Coord 3 0) (Destination Moon Red)
@@ -177,7 +166,7 @@ addWalls walls cells = do
   -- could be middleware?
   -- use Control.State?
   let newCell =
-        maybe cell id (map (\(WallCell coord' wall') -> Cell coord' person wall' dest) $ findWall coord walls)
+        maybe cell identity (map (\(WallCell coord' wall') -> Cell coord' person wall' dest) $ findWall coord walls)
   pure newCell
 
 addPeople :: List PersonCell -> List Cell -> List Cell
@@ -185,14 +174,14 @@ addPeople people cells = do
   cell@Cell coord _ wall dest <- cells
   -- TODO: Error if placing new person on Coord of existing person
   let newCell =
-        maybe cell id (map (\(PersonCell coord' person') -> Cell coord' person' wall dest) $ findPerson coord people)
+        maybe cell identity (map (\(PersonCell coord' person') -> Cell coord' person' wall dest) $ findPerson coord people)
   pure newCell
 
 addDestinations :: List DestinationCell -> List Cell -> List Cell
 addDestinations destinations cells = do
   cell@Cell coord person wall _ <- cells
   let newCell =
-        maybe cell id (map (\(DestinationCell coord' dest') -> Cell coord' person wall dest') $ findDestination coord destinations)
+        maybe cell identity (map (\(DestinationCell coord' dest') -> Cell coord' person wall dest') $ findDestination coord destinations)
   pure newCell
 
 type Ops =
@@ -259,11 +248,11 @@ filt dir (PersonCell (Coord x y) p) =
                }
     ops East = { compX: (>=)
                , compY: (==)
-               , ord: id
+               , ord: identity
                }
     ops North = { compX: (==)
                 , compY: (<=)
-                , ord: id
+                , ord: identity
                 }
     ops South = { compX: (==)
                 , compY: (>=)
@@ -273,7 +262,7 @@ filt dir (PersonCell (Coord x y) p) =
 -- check for: walls, people, goal
 movePerson :: PersonCell -> Direction -> List Cell -> PersonCell
 movePerson pc@(PersonCell c@(Coord x y) p) direction
-  = maybe pc id <<<
+  = maybe pc identity <<<
     -- replace last with head
     last <<<
     map (\(Cell coord' _ _ _) -> PersonCell coord' p) <<<
@@ -360,7 +349,7 @@ cellToHtml {toggledPerson} (Cell coord@(Coord x y) person wall dest) =
       Yellow -> "yellow "
       NoPerson -> ""
 
-ui :: forall eff. H.Component HH.HTML Query Unit Void (Aff (AppEffects eff))
+ui :: H.Component HH.HTML Query Unit Void Aff
 ui =
   H.component
     { initialState: const initialState
@@ -372,10 +361,9 @@ ui =
   where
     initialState =
       { game:
-          { people
-          , walls
-          , destinations
-          , grid
+          { walls: initWalls
+          , people: initPeople
+          , destinations: initDestinations
           , toggledPerson: Nothing
           }
       }
@@ -386,47 +374,38 @@ ui =
         [ HP.class_ $ wrap "container" ]
         [ gridToHtml state.game grid ]
 --    log' = H.liftEff <<< log
-    eval :: Query ~> H.ComponentDSL State Query Void (Aff (AppEffects eff))
-    eval move@(Move (Just npc@(PersonCell coord _)) direction next) = do
-      {walls, people, grid} <- H.gets _.game
-      let obstacledGrid = (addWalls walls <<< addPeople people) grid
-      let npc'@(PersonCell coord' np) = movePerson npc direction obstacledGrid
-      let newPeople = map (\opc@(PersonCell _ op) -> if np == op then npc' else opc) people
---      log' "people:"
---      log' $ show people
---      log' $ show newPeople
---      log' "person:"
---      log' $ show npc
---      log' "filtered oldGrid:"
---      log' $ show $ filt direction npc $ fromFoldable obstacledGrid
-      H.modify \s -> s {game {people = newPeople}}
---      let nextGrid = addWalls walls <<< addPeople newPeople $ grid
---      log' "filtered nextGrid:"
---      log' $ show $ filt direction npc' $ fromFoldable nextGrid
---      log' $ "nextGrid:"
---      log' $ show nextGrid
-      pure next
-    eval (Move Nothing _ next) = pure next
-    eval (Toggle toggledPerson next) = do
+    eval :: forall m. Query ~> H.ComponentDSL State Query Void m --Aff
+    eval = case _ of
+      move@(Move (Just npc@(PersonCell coord _)) direction next) -> do
+        {walls, people} <- H.gets _.game
+        let obstacledGrid = (addWalls walls <<< addPeople people) grid
+        let npc'@(PersonCell coord' np) = movePerson npc direction obstacledGrid
+        let newPeople = map (\opc@(PersonCell _ op) -> if np == op then npc' else opc) people
+--        log' "people:"
+--        log' $ show people
+--        log' $ show newPeople
+--        log' "person:"
+--        log' $ show npc
+--        log' "filtered oldGrid:"
+--        log' $ show $ filt direction npc $ fromFoldable obstacledGrid
+        _ <- H.modify \s -> s {game {people = newPeople}}
+--        let nextGrid = addWalls walls <<< addPeople newPeople $ grid
+--        log' "filtered nextGrid:"
+--        log' $ show $ filt direction npc' $ fromFoldable nextGrid
+--        log' $ "nextGrid:"
+--        log' $ show nextGrid
+        pure next
+      (Move Nothing _ next) -> pure next
+      (Toggle toggledPerson next) -> do
 --      log' $ "toggledPerson: " <> show toggledPerson
 --      {walls, people, grid} <- H.gets _.game
 --      let obstacledGrid = (addWalls walls <<< addPeople people) grid
 --      log' $ show obstacledGrid
-      H.modify \s -> s {game {toggledPerson = toggledPerson}}
-      pure next
+        _ <- H.modify \s -> s {game {toggledPerson = toggledPerson}}
+        pure next
 
-main :: forall e.
-  Eff
-    (AppEffects
-      ( avar :: AVAR
-      , ref :: REF
-      , exception :: EXCEPTION
-      | e
-      )
-    )
-    Unit
+main :: Effect Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
-  io <- D.runUI ui unit body
+  D.runUI ui unit body
 
-  H.liftEff $ log "Running"

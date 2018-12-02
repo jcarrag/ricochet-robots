@@ -11,7 +11,7 @@ jobs:
   build:
     docker:
       # specify the version you desire here
-      - image: circleci/node:7.10
+      - image: circleci/node:10.14.0
       
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images
@@ -26,20 +26,25 @@ jobs:
       # Download and cache dependencies
       - restore_cache:
           keys:
-          - v2-dependencies-{{ checksum "bower.json" }}
-          # fallback to using the latest cache if no exact match is found
-          - v1-dependencies-
+          - v3-dependencies-{{ checksum "psc-package.json" }}
 
-      - run: sudo npm i -g purescript@0.11.7 bower@1.7.10 pulp@12.0.1
-      - run: bower install
-        
-      - run: pulp browserify -t app.js -O
+      - run: npm i purescript@0.12.0
+      - run: sudo cp node_modules/.bin/purs /usr/local/bin/purs
+
+      - run: npm i psc-package@3.0.0
+      - run: sudo cp node_modules/.bin/psc-package /usr/local/bin/psc-package
+
+      - run: npm i pulp@12.3.0
+
+      - run: node_modules/.bin/psc-package install
+
+      - run: node_modules/.bin/pulp browserify -t app.js -O
 
       - save_cache:
           paths:
-            - bower_components
+            - .psc-package
             - output
-          key: v2-dependencies-{{ checksum "bower.json" }}
+          key: v3-dependencies-{{ checksum "psc-package.json" }}
 
       - run: git config --global user.email "circle@ci.com"
       - run: git config --global user.name "CircleCI"
